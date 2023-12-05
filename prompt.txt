@@ -1,0 +1,17 @@
+>>> start_game("London, 1660")
+You are in your room in the Lamb and Flag Inn. Behind you is a window. Ahead of you is a door to the hallway. To your left is a desk and the bed. On the desk is your rapier. To your right is a dresser and the fireplace.
+Scene('lamb_and_flag_room_1', behind=[WallFeature('window', width=1)], ahead=[WallFeature('door', width=1)], left=[Feature('desk', dist_from_wall=1, width_along_wall=2, depth=1), Item('rapier', on='desk'), Feature('bed', dist_from_wall=0, width_along_wall=3, depth=2)], right=[Feature('dresser', dist_from_wall=0, width_along_wall=2, depth=1), WallFeature('fireplace', width=2)])
+>>> inventory
+Inventory([(Item('pence'), 2)])
+>>> take('rapier')
+You pick up your rapier.
+InventoryChange([(Item('rapier'), 1)])
+>>> go('door', 'ahead')
+You are in the hallway of the Lamb and Flag Inn. Behind is the door to your room. To your left is a door leading to the tavern. In front of you is the entrance to the dining room. Ahead of you is a staircase going up. On the right are the stairs leading down to the basement. There is another guest here.
+Scene('lamb_and_flag_hallway', behind=[WallFeature('door', width=1)], left=[WallFeature('door', width=1)], ahead=[WallFeature('staircase_up', width=1), WallFeature('hallway_door', width=1)], right=[Feature('stairs_down', dist_from_wall=0, width_along_wall=1, depth=3), Person('gentleman', at='stairs_down')])
+>>> say('Good morrow to you, sir', to='gentleman')
+"And a good morrow to you as well, my dear sir."
+>>> go('door', 'left')
+You are in the Lamb and Flag Inn's tavern. Behind you is the door to the hallway. To your right are two large tables with people playing cards at them. In front of you, across from the tables, is a bar with a sign that says "Bar." To your left is the door to the street and another table of men playing cards and talking. Behind the bar is a fireplace.
+Scene('tavern', behind=[WallFeature('door', width=1)], right=[Feature('table1', dist_from_wall=2, width_along_wall=4, depth=2), Item('cards', on='table1'), People(3, 'adult male', at='table1'), Feature('table2', dist_from_wall=2, width_along_wall=4, depth=2), Item('cards', on='table2'), People(3, 'adult male', at='table2')], ahead=[WallFeature('fireplace', width=2), Feature('bar', dist_from_wall=2, in_front_of='fireplace', width_along_wall=4, depth=1), Person('bartender', at='bar'), Item('sign', on='bar')], left=[WallFeature('door', width=1), Feature('table3', dist_from_wall=1, width_along_wall=7, depth=3), Item('cards', on='table3'), People(3, 'adult male', at='table3')])
+>>>
