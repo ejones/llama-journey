@@ -148,7 +148,7 @@ class Shape:
     depth: int
     offset: int
     in_front_of: str = ""
-    style: Style = Style()
+    style: Style = field(default_factory=Style)
 
 
 @dataclass
