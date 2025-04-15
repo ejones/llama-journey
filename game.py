@@ -313,7 +313,7 @@ def draw(boxes, size, scale=1, view_size=(0, 0), focus_pos=None):
         half_view_width = view_width // 2
         half_view_height = view_height // 2
         view_left = max(0, focus_x * scale - half_view_width)
-        view_top = max(0, focus_y * scale - half_view_height)
+        view_top = min(max(-1, focus_y * scale - half_view_height), world_height * scale - view_height)
         view_right = min(world_width * scale, view_left + view_width)
         view_bottom = min(world_height * scale, view_top + view_height)
     else:
@@ -400,7 +400,7 @@ def draw(boxes, size, scale=1, view_size=(0, 0), focus_pos=None):
     # Render the visible portion of the canvas
     for y in range(view_top, view_bottom):
         row = canvas[y][view_left:view_right]
-        print("".join(row), end='\r\n')
+        print(' ' * ((view_width - len(row)) // 2), "".join(row), end='\r\n')
     
     # Print position information (useful for debugging)
     #if focus_pos:
@@ -1153,7 +1153,7 @@ def draw_game(state: GameState):
     
     # Calculate available space for the map
     # Reserve space for UI elements (header, footer, inventory, etc.)
-    map_height = term_h - 18 - state.scrollback
+    map_height = term_h - 23 - state.scrollback
     
     # Render map
     draw(
