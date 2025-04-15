@@ -132,7 +132,7 @@ def get_dataclass_deps(cls):
             yield from get_dataclass_deps(dep)
 
 
-@dataclass
+@dataclass(frozen=True)
 class Style:
     label: str = ""
     inset: bool = False
@@ -719,13 +719,11 @@ class InferenceProcess(subprocess.Popen):
                 ' ',
                 '-r',
                 '>>>',
-                '-c',
-                '4096',
                 '-i',
                 '--interactive-first',
+                '-no-cnv',
+                '--special',
                 '--simple-io',
-                '--mirostat',
-                '2'
             ],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -737,7 +735,11 @@ class InferenceProcess(subprocess.Popen):
         self._eval_globals = eval_globals
 
         self._output = ''
-        while not self._output.endswith(prompt + ' '):
+
+        last_line = prompt.splitlines()[-2]
+        initial_suffix = f'{last_line}\n>>> '
+
+        while not self._output.endswith(initial_suffix):
             chunk = self.stdout.read(1)
             self._output += chunk
             print(chunk, end='', flush=True)
@@ -764,7 +766,7 @@ class InferenceProcess(subprocess.Popen):
             self._output += chunk
             self._all_output += chunk
             if chunk == '\n':
-                print('\r')
+                print('\r', end='', flush=True)
             else:
                 lines = self._output.splitlines()
                 if lines[-1] and (
@@ -1195,7 +1197,7 @@ def curses_main(stdscr, inference_proc):
 
 def main():
     if len(sys.argv) < 3:
-        print('usage: python3 scene.py <llama-cpp-main-path> <model-path> <prompt-file>')
+        print('usage: python3 game.py <llama-cpp-main-path> <model-path> <prompt-file>')
         exit(1)
 
     grammar_rules = {
@@ -1216,7 +1218,7 @@ def main():
     inference_proc = InferenceProcess(
         llama_main=sys.argv[1],
         model=sys.argv[2],
-        prompt=open(sys.argv[3]).read(),
+        prompt=open(sys.argv[3]).read().rstrip(),
         grammar=format_grammar_dict(grammar_rules),
         eval_globals={
             dep.__name__: dep
