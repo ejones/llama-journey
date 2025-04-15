@@ -368,9 +368,9 @@ def draw(boxes, size, scale=1, view_size=(0, 0), focus_pos=None):
                             if is_border and style.border_color is not None:
                                 # Border with color
                                 canvas[row][col] = f"\x1b[38;5;{color}m{border_char}\x1b[0m"
-                            elif not is_border and style.fill_color is not None:
+                            elif not is_border and (style.fill_color is not None or fill_char is not None):
                                 # Fill with color
-                                fill_color = style.fill_color
+                                fill_color = style.fill_color or color
                                 canvas[row][col] = f"\x1b[38;5;{fill_color}m{fill_char}\x1b[0m"
                             elif style.inset:
                                 # Inset style for UI elements
@@ -774,7 +774,7 @@ def get_person_box(pos, label):
     """
     # Choose different colors and appearance based on person type
     color = 4  # Default blue
-    character = '☺'  # Default person character
+    character = '♟'  # Default person character
     
     # Check for specific person types and assign appropriate colors and characters
     label_lower = label.lower()
@@ -801,7 +801,7 @@ def get_person_box(pos, label):
         character = '†'  # Cross
     elif 'gentleman' in label_lower or 'lady' in label_lower:
         color = 141  # Light purple
-        character = '♟'  # Pawn chess piece
+        character = '♝'  # Pawn chess piece
     
     # Create a style with the character as material to display the person icon
     return pos, (1, 1), Style(
@@ -1153,7 +1153,7 @@ def draw_game(state: GameState):
     
     # Calculate available space for the map
     # Reserve space for UI elements (header, footer, inventory, etc.)
-    map_height = term_h - 16 - state.scrollback
+    map_height = term_h - 18 - state.scrollback
     
     # Render map
     draw(
