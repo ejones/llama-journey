@@ -291,11 +291,22 @@ def get_material_info(material):
     return color, border_char, fill_char
 
 def draw(boxes, size, scale=1, view_size=(0, 0), focus_pos=None):
+    """
+    Draw the game world using Unicode
+    
+    Args:
+        boxes: List of game objects to render with position, size, and style
+        size: Overall size of the world (width, height)
+        scale: Scaling factor for rendering
+        view_size: Size of the viewport (width, height)
+        focus_pos: Position to center the view on (x, y)
+    """
     view_w, view_h = view_size
     width, height = size
     canvas_w = view_w or width * scale
     canvas_h = view_h or height * scale
 
+    # Calculate viewport offset
     offsetx = (view_w - width * scale) // 2
     offsety = (view_h - height * scale) // 2
     if focus_pos:
@@ -305,15 +316,24 @@ def draw(boxes, size, scale=1, view_size=(0, 0), focus_pos=None):
         offsetx = max(canvas_w // 5 - focusx, min(offsetx, canvas_w * 4 // 5 - focusx))
         offsety = max(canvas_h // 5 - focusy, min(offsety, canvas_h * 4 // 5 - focusy))
 
-    # Canvas now stores tuples of (color, char) instead of just color
+    # Create canvas with tuples of (color, character)
     canvas = [[(0, ' ') for _ in range(canvas_w)] for _ in range(canvas_h)]
 
+    # Function to set a pixel on the canvas with bounds checking
     def set_pixel(x, y, color, char=' '):
         x += offsetx
         y += offsety
         if 0 <= x < canvas_w and 0 <= y < canvas_h:
             canvas[y][x] = (color, char)
 
+    # Unicode box drawing characters for corners and edges
+    box_chars = {
+        'tl': '╔', 'tr': '╗', 'bl': '╚', 'br': '╝',
+        'h': '═', 'v': '║', 'lt': '╠', 'rt': '╣',
+        'tb': '╦', 'bt': '╩', 'cross': '╬'
+    }
+
+    # Draw each box in the scene
     for (x, y), (w, h), style in boxes:
         x *= scale 
         y *= scale
@@ -321,59 +341,122 @@ def draw(boxes, size, scale=1, view_size=(0, 0), focus_pos=None):
         y_end = y + h * scale
         offset = scale - 1 if style.inset else 0
         
-        # Determine material appearance
+        # Get material-based appearance
         material_color, border_char, fill_char = get_material_info(style.material)
         
         # Use material color if no specific color is set
         border_color = style.border_color if style.border_color is not None else material_color
         fill_color = style.fill_color if style.fill_color is not None else material_color
         
-        # Draw borders
+        # Draw corners with special characters for a more detailed look
         if border_color is not None:
-            for i in range(x + offset, x_end - offset):
-                set_pixel(i, y + offset, border_color, border_char)
-                set_pixel(i, y_end - 1 - offset, border_color, border_char)
-            for i in range(y + offset, y_end - offset):
-                set_pixel(x + offset, i, border_color, border_char)
-                set_pixel(x_end - 1 - offset, i, border_color, border_char)
+            # Top-left
+            set_pixel(x + offset, y + offset, border_color, '┌')
+            # Top-right
+            set_pixel(x_end - 1 - offset, y + offset, border_color, '┐')
+            # Bottom-left
+            set_pixel(x + offset, y_end - 1 - offset, border_color, '└')
+            # Bottom-right
+            set_pixel(x_end - 1 - offset, y_end - 1 - offset, border_color, '┘')
+            
+            # Draw horizontal borders (top and bottom)
+            for i in range(x + offset + 1, x_end - offset - 1):
+                set_pixel(i, y + offset, border_color, '─')
+                set_pixel(i, y_end - 1 - offset, border_color, '─')
+            
+            # Draw vertical borders (left and right)
+            for i in range(y + offset + 1, y_end - offset - 1):
+                set_pixel(x + offset, i, border_color, '│')
+                set_pixel(x_end - 1 - offset, i, border_color, '│')
         
-        # Fill interior
+        # Fill interior with material-specific characters or pattern
         if fill_color is not None:
             for i in range(x + offset + 1, x_end - offset - 1):
                 for j in range(y + offset + 1, y_end - offset - 1):
-                    set_pixel(i, j, fill_color, fill_char)
+                    # Use special patterns for different materials instead of just solid fills
+                    if style.material.lower().startswith('wood'):
+                        # Wood grain pattern (alternate lines)
+                        char = '░' if j % 2 == 0 else '▒'
+                    elif 'stone' in style.material.lower():
+                        # Stone texture (random dots)
+                        char = '▒' if (i + j) % 3 == 0 else '░'
+                    elif 'metal' in style.material.lower():
+                        # Metal texture (solid with highlights)
+                        char = '▓' if (i + j) % 5 == 0 else '▒'
+                    elif 'glass' in style.material.lower():
+                        # Glass texture (mostly empty with some dots)
+                        char = '·' if (i * j) % 7 == 0 else ' '
+                    elif 'water' in style.material.lower():
+                        # Water texture (wavy pattern)
+                        char = '~' if j % 2 == 0 else '≈'
+                    else:
+                        # Default fill
+                        char = fill_char
+                    
+                    set_pixel(i, j, fill_color, char)
         
-        # Add label
+        # Add label with enhanced text appearance
         if style.label:
-            name = style.label[:w * scale]
+            # Limit label length based on box width
+            name = style.label[:w * scale - 2]
+            if not name:
+                continue
+                
+            # Center the label
             nx = x + (w * scale - len(name)) // 2
             ny = y + h * scale // 3
+            
+            # Draw a clearer text background if it's a feature (not text)
+            if w > len(name) + 2 and h > 2:
+                # Draw a cleaner background for text
+                for i in range(nx - 1, nx + len(name) + 1):
+                    if 0 <= i - x < w * scale:
+                        set_pixel(i, ny, 0, ' ')  # Black background for text
+            
+            # Draw the text with a bright color for visibility
             for i, c in enumerate(name):
-                set_pixel(nx + i, ny, 15, c)  # White text
-         
-    # Render the canvas with Unicode block characters
+                if c != ' ':  # Only print non-space characters
+                    set_pixel(nx + i, ny, 15, c)  # White text
+    
+    # Render the canvas with enhanced block characters
     for i in range(0, len(canvas) - 1, 2):
         for (bg_color, bg_char), (fg_color, fg_char) in zip(canvas[i], canvas[i + 1]):
-            # If we have text characters, display them
-            if bg_char != ' ' and bg_char not in "▓▒░█≈🔥":
-                print(f'\x1b[38;5;15m\x1b[48;5;{bg_color}m{bg_char}', end='')
-            elif fg_char != ' ' and fg_char not in "▓▒░█≈🔥":
-                print(f'\x1b[38;5;15m\x1b[48;5;{fg_color}m{fg_char}', end='')
-            # Otherwise display block characters with the appropriate colors
-            else:
-                # Choose which character to display based on what's in each cell
-                if bg_char == ' ' and fg_char == ' ':
-                    # Both empty, use block character with colors
-                    print(f'\x1b[48;5;{bg_color}m\x1b[38;5;{fg_color}m\u2584', end='')
-                elif bg_char != ' ' and fg_char == ' ':
-                    # Only top has a character
+            # Special characters that should be displayed directly
+            special_chars = "┌┐└┘─│╔╗╚╝═║╠╣╦╩╬·≈~"
+            
+            # Text or special characters rendering
+            if bg_char != ' ' and (bg_char.isalnum() or bg_char in special_chars):
+                # Text in top cell
+                if bg_char in special_chars:
+                    # Box drawing characters
                     print(f'\x1b[38;5;{bg_color}m{bg_char}', end='')
-                elif bg_char == ' ' and fg_char != ' ':
-                    # Only bottom has a character
+                else:
+                    # Regular text
+                    print(f'\x1b[38;5;15m\x1b[48;5;{bg_color}m{bg_char}', end='')
+            elif fg_char != ' ' and (fg_char.isalnum() or fg_char in special_chars):
+                # Text in bottom cell
+                if fg_char in special_chars:
+                    # Box drawing characters
                     print(f'\x1b[38;5;{fg_color}m{fg_char}', end='')
                 else:
-                    # Both have characters, prefer top
+                    # Regular text
+                    print(f'\x1b[38;5;15m\x1b[48;5;{fg_color}m{fg_char}', end='')
+            else:
+                # Block characters for background/foreground colors
+                if bg_char == ' ' and fg_char == ' ':
+                    # Empty cells - use block character with appropriate colors
+                    print(f'\x1b[48;5;{bg_color}m\x1b[38;5;{fg_color}m\u2584', end='')
+                elif bg_char != ' ' and fg_char == ' ':
+                    # Top cell has a texture character
                     print(f'\x1b[38;5;{bg_color}m{bg_char}', end='')
+                elif bg_char == ' ' and fg_char != ' ':
+                    # Bottom cell has a texture character
+                    print(f'\x1b[38;5;{fg_color}m{fg_char}', end='')
+                else:
+                    # Both have texture characters, show top with bottom color as background
+                    print(f'\x1b[48;5;{fg_color}m\x1b[38;5;{bg_color}m{bg_char}', end='')
+        
+        # Reset colors at end of line
         print('\x1b[m\r')
 
 
@@ -732,25 +815,54 @@ def Intersection(*args, **kwargs):
 
 
 def get_person_box(pos, label):
-    # Choose different colors based on person type
-    color = 4  # Default blue
+    """
+    Create a box representing a person with appropriate styling based on their type.
     
-    # Check for specific person types and assign appropriate colors
+    Args:
+        pos: Position (x, y) of the person
+        label: Person type/description
+        
+    Returns:
+        Tuple of ((x, y), (width, height), Style) representing the person
+    """
+    # Choose different colors and appearance based on person type
+    color = 4  # Default blue
+    character = '☺'  # Default person character
+    
+    # Check for specific person types and assign appropriate colors and characters
     label_lower = label.lower()
     if 'guard' in label_lower or 'soldier' in label_lower:
         color = 1  # Red
+        character = '♜'  # Castle/rook chess piece
+    elif 'bartender' in label_lower or 'innkeeper' in label_lower:
+        color = 208  # Orange
+        character = '♨'  # Hot springs symbol (looks like drinks)
     elif 'merchant' in label_lower or 'vendor' in label_lower:
         color = 3  # Yellow
+        character = '♠'  # Spade (looks like a merchant's scale)
     elif 'wizard' in label_lower or 'mage' in label_lower:
         color = 5  # Magenta
+        character = '★'  # Star for magic
     elif 'noble' in label_lower or 'king' in label_lower or 'queen' in label_lower:
         color = 11  # Cyan
+        character = '♛'  # Queen chess piece
     elif 'thief' in label_lower or 'rogue' in label_lower:
-        color = 0  # Black
+        color = 240  # Dark gray
+        character = '♞'  # Knight chess piece
     elif 'monk' in label_lower or 'priest' in label_lower:
         color = 15  # White
+        character = '†'  # Cross
+    elif 'gentleman' in label_lower or 'lady' in label_lower:
+        color = 141  # Light purple
+        character = '♟'  # Pawn chess piece
     
-    return pos, (1, 1), Style(fill_color=color, border_color=None, label=label)
+    # Create a style with the character as material to display the person icon
+    return pos, (1, 1), Style(
+        fill_color=color, 
+        border_color=None, 
+        label=label,
+        material=character  # Use the character as "material" for display
+    )
 
 
 def get_people_boxes(scene):
@@ -1074,75 +1186,125 @@ def curses_prompt(stdscr, prompt):
 
 
 def draw_game(state: GameState):
-    print("\x1b[2J\x1b[1;1H", end="")  # Clear screen
+    """Draw the game interface with enhanced Unicode graphics and colors."""
+    # Clear screen
+    print("\x1b[2J\x1b[1;1H", end="")
+    
     if not state.scene or not state.inventory:
-        return # REVIEW
+        return
+    
+    # Get screen dimensions
+    term_w, term_h = os.get_terminal_size()
+    screen_width = term_w
+    
+    # Prepare scene elements
     boxes, size = state.scene.plot()
     player_box = (
-        (state.posx, state.posy), (1, 1), Style(fill_color=14, label='you', border_color=None)  # Bright yellow player
+        (state.posx, state.posy), (1, 1), 
+        Style(fill_color=14, label='you', border_color=None)  # Bright yellow player
     )
-    term_w, term_h = os.get_terminal_size()
+    
+    # Calculate available space for the map
+    # Reserve space for UI elements (header, footer, inventory, etc.)
+    map_height = term_h - 12 - state.scrollback
+    if map_height < 10:  # Minimum reasonable map height
+        map_height = 10
+    
+    # Render map
     draw(
         [*boxes, *state.people_boxes, player_box],
         size,
         scale=state.scale,
-        view_size=(term_w, 2 * (term_h - 12 - state.scrollback)),  # Adjust for more UI elements
+        view_size=(term_w, 2 * map_height),
         focus_pos=(state.posx, state.posy)
     )
-    screen_width = os.get_terminal_size()[0]
     
-    # Enhanced inventory display with item materials
+    # Prepare inventory display with materials
     inv_items = []
     for i, cnt in state.inventory.items:
-        material_info = f" [{i.material}]" if i.material else ""
-        inv_items.append(f'{i.name}{material_info} ({cnt})')
+        material_info = f"[{i.material}]" if i.material else ""
+        if material_info:
+            inv_items.append(f'{i.name} {material_info} ({cnt})')
+        else:
+            inv_items.append(f'{i.name} ({cnt})')
     inv_message = ', '.join(inv_items)
     
-    # Enhanced UI with Unicode symbols and colors
+    # Function to strip ANSI escape sequences for length calculations
+    def strip_ansi(text):
+        import re
+        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+        return ansi_escape.sub('', text)
+    
+    # Function to create a padded line with border
+    def border_line(content, border_color="39"):
+        stripped_content = strip_ansi(content)
+        padding = ' ' * (screen_width - len(stripped_content) - 2)
+        return f"\x1b[1m\x1b[38;5;{border_color}m║\x1b[0m {content}{padding}\x1b[1m\x1b[38;5;{border_color}m║\x1b[0m\r"
+    
+    # Draw UI frame and elements
     print('\r')
-    print('\x1b[1m\x1b[38;5;39m╔' + '═' * (screen_width - 2) + '╗\x1b[0m\r')  # Top border
     
-    # Commands bar with Unicode symbols
-    print('\x1b[1m\x1b[38;5;39m║\x1b[0m \x1b[38;5;15m↑←↓→\x1b[0m: move | \x1b[38;5;214mt\x1b[0m: talk | \x1b[38;5;214m1-9\x1b[0m: equip | \x1b[38;5;214mg\x1b[0m: give | \x1b[38;5;214ma\x1b[0m: attack | \x1b[38;5;214menter\x1b[0m: interact\x1b[1m\x1b[38;5;39m║\x1b[0m\r')
-    print('\x1b[1m\x1b[38;5;39m║\x1b[0m \x1b[38;5;214m~\x1b[0m: console - \x1b[38;5;245m`newperson <name> <desc>`, `newdoor <name> <desc>`, `newgame <name>`\x1b[0m\x1b[1m\x1b[38;5;39m' + ' ' * (screen_width - 79) + '║\x1b[0m\r')
+    # Top border
+    print(f"\x1b[1m\x1b[38;5;39m╔{'═' * (screen_width - 2)}╗\x1b[0m\r")
     
-    # Location and equipped item info
+    # Title bar
+    scene_name = state.scene.name if state.scene else "Unknown"
+    title = f"\x1b[1m\x1b[38;5;51m{scene_name}\x1b[0m"
+    print(border_line(title))
+    
+    # Command reference
+    cmd_line = "\x1b[38;5;15m↑←↓→\x1b[0m: move | \x1b[38;5;220mt\x1b[0m: talk | \x1b[38;5;220m1-9\x1b[0m: equip | \x1b[38;5;220mg\x1b[0m: give | \x1b[38;5;220ma\x1b[0m: attack | \x1b[38;5;220menter\x1b[0m: interact"
+    print(border_line(cmd_line))
+    
+    console_line = "\x1b[38;5;220m~\x1b[0m: console - \x1b[38;5;245m`newperson <name> <desc>`, `newdoor <name> <desc>`, `newgame <name>`\x1b[0m"
+    print(border_line(console_line))
+    
+    # Context information
     equipped = state.get_equipped()
-    equipped_text = f" | Equipped: \x1b[38;5;214m{equipped.name if equipped else 'None'}\x1b[0m"
-    location_line = f"\x1b[1m\x1b[38;5;39m║\x1b[0m Location: \x1b[38;5;47m{state.hitbox.label if state.hitbox else ''}\x1b[0m" + equipped_text
-    location_padding = ' ' * (screen_width - len(location_line.replace('\x1b[1m', '').replace('\x1b[0m', '').replace('\x1b[38;5;39m', '').replace('\x1b[38;5;47m', '').replace('\x1b[38;5;214m', '')) + 1)
-    print(location_line + location_padding + '\x1b[1m\x1b[38;5;39m║\x1b[0m\r')
+    equipped_text = f"Equipped: \x1b[38;5;220m{equipped.name if equipped else 'None'}\x1b[0m"
+    if equipped and equipped.material:
+        equipped_text += f" \x1b[38;5;245m[{equipped.material}]\x1b[0m"
     
-    # Nearby person info
-    nearby_line = f"\x1b[1m\x1b[38;5;39m║\x1b[0m Nearby: \x1b[38;5;208m{state.nearest_person if state.nearest_person else 'No one'}\x1b[0m"
-    nearby_padding = ' ' * (screen_width - len(nearby_line.replace('\x1b[1m', '').replace('\x1b[0m', '').replace('\x1b[38;5;39m', '').replace('\x1b[38;5;208m', '')) + 1)
-    print(nearby_line + nearby_padding + '\x1b[1m\x1b[38;5;39m║\x1b[0m\r')
+    location_text = f"Location: \x1b[38;5;47m{state.hitbox.label if state.hitbox else 'None'}\x1b[0m | {equipped_text}"
+    print(border_line(location_text))
     
-    # Inventory display
-    print('\x1b[1m\x1b[38;5;39m║\x1b[0m \x1b[38;5;226mInventory:\x1b[0m ' + inv_message[:screen_width-24] + '\x1b[1m\x1b[38;5;39m' + ' ' * (screen_width - len(inv_message) - 23) + '║\x1b[0m\r')
+    nearby_text = f"Nearby: \x1b[38;5;208m{state.nearest_person if state.nearest_person else 'No one'}\x1b[0m"
+    print(border_line(nearby_text))
     
-    # Divider
-    print('\x1b[1m\x1b[38;5;39m╠' + '═' * (screen_width - 2) + '╣\x1b[0m\r')
+    # Inventory
+    inv_label = "\x1b[38;5;226mInventory:\x1b[0m "
+    if len(inv_message) > screen_width - len(strip_ansi(inv_label)) - 10:
+        # Truncate if too long
+        truncated_length = screen_width - len(strip_ansi(inv_label)) - 13
+        inv_display = inv_message[:truncated_length] + "..."
+    else:
+        inv_display = inv_message
+    print(border_line(inv_label + inv_display))
     
-    # Message area with enhanced styling
-    displayable_messages = [
-        chunk
-        for msg, wrap in state.messages
-        for chunk in (textwrap.wrap(msg, screen_width-4) if wrap else [msg])
-    ]
+    # Divider between info and messages
+    print(f"\x1b[1m\x1b[38;5;39m╠{'═' * (screen_width - 2)}╣\x1b[0m\r")
     
-    # Print messages with a scrolling window effect
+    # Message area
+    displayable_messages = []
+    for msg, wrap in state.messages:
+        if wrap:
+            displayable_messages.extend(textwrap.wrap(msg, screen_width - 4))
+        else:
+            displayable_messages.append(msg)
+    
+    # Show the most recent messages first to fit in the scrollback area
     for chunk in displayable_messages[-state.scrollback:]:
-        msg_line = f"\x1b[1m\x1b[38;5;39m║\x1b[0m \x1b[38;5;252m{chunk[:screen_width-4]}\x1b[0m"
-        msg_padding = ' ' * (screen_width - len(chunk) - 3)
-        print(msg_line + msg_padding + '\x1b[1m\x1b[38;5;39m║\x1b[0m\r')
+        if len(chunk) > screen_width - 4:
+            chunk = chunk[:screen_width - 7] + "..."
+        msg_text = f"\x1b[38;5;252m{chunk}\x1b[0m"
+        print(border_line(msg_text))
     
     # Fill remaining message area with empty lines
     for _ in range(state.scrollback - len(displayable_messages[-state.scrollback:])):
-        print('\x1b[1m\x1b[38;5;39m║\x1b[0m' + ' ' * (screen_width - 2) + '\x1b[1m\x1b[38;5;39m║\x1b[0m\r')
+        print(border_line(""))
     
     # Bottom border
-    print('\x1b[1m\x1b[38;5;39m╚' + '═' * (screen_width - 2) + '╝\x1b[0m\r')
+    print(f"\x1b[1m\x1b[38;5;39m╚{'═' * (screen_width - 2)}╝\x1b[0m\r")
 
 
 def replay_typing(msg: str, chunk_size: int, delay: Union[float, Callable]):
