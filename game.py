@@ -139,6 +139,7 @@ class Style:
     border_color: Optional[int] = 7
     fill_color: Optional[int] = None
     orig_dir: str = ""
+    material: str = ""  # Material of the object (wood, stone, metal, etc)
 
 
 @dataclass
@@ -237,6 +238,58 @@ def transform(x, *funcs):
     return x
 
 
+def get_material_info(material):
+    """Get color and unicode character based on material."""
+    material = material.lower() if material else ""
+    
+    # Default values
+    border_char = "▓"
+    fill_char = "░"
+    color = 7  # Default light gray
+    
+    if "wood" in material:
+        color = 94  # Light brown
+        border_char = "▓"
+        fill_char = "░"
+    elif "stone" in material or "rock" in material:
+        color = 248  # Gray
+        border_char = "▒"
+        fill_char = "░"
+    elif "metal" in material or "iron" in material or "steel" in material:
+        color = 240  # Dark gray
+        border_char = "█"
+        fill_char = "▒"
+    elif "gold" in material:
+        color = 220  # Gold
+        border_char = "▓"
+        fill_char = "░"
+    elif "silver" in material:
+        color = 250  # Silver
+        border_char = "▓"
+        fill_char = "░"
+    elif "glass" in material:
+        color = 51  # Light cyan
+        border_char = "▒"
+        fill_char = " "
+    elif "cloth" in material or "fabric" in material:
+        color = 105  # Light magenta
+        border_char = "▒"
+        fill_char = "░"
+    elif "leather" in material:
+        color = 130  # Brown
+        border_char = "▓"
+        fill_char = "░"
+    elif "water" in material:
+        color = 39  # Cyan
+        border_char = "≈"
+        fill_char = "≈"
+    elif "fire" in material:
+        color = 196  # Red
+        border_char = "🔥"
+        fill_char = "🔥"
+    
+    return color, border_char, fill_char
+
 def draw(boxes, size, scale=1, view_size=(0, 0), focus_pos=None):
     view_w, view_h = view_size
     width, height = size
@@ -252,13 +305,14 @@ def draw(boxes, size, scale=1, view_size=(0, 0), focus_pos=None):
         offsetx = max(canvas_w // 5 - focusx, min(offsetx, canvas_w * 4 // 5 - focusx))
         offsety = max(canvas_h // 5 - focusy, min(offsety, canvas_h * 4 // 5 - focusy))
 
-    canvas = [[0 for _ in range(canvas_w)] for _ in range(canvas_h)]
+    # Canvas now stores tuples of (color, char) instead of just color
+    canvas = [[(0, ' ') for _ in range(canvas_w)] for _ in range(canvas_h)]
 
-    def set_pixel(x, y, color):
+    def set_pixel(x, y, color, char=' '):
         x += offsetx
         y += offsety
         if 0 <= x < canvas_w and 0 <= y < canvas_h:
-            canvas[y][x] = color
+            canvas[y][x] = (color, char)
 
     for (x, y), (w, h), style in boxes:
         x *= scale 
@@ -266,32 +320,60 @@ def draw(boxes, size, scale=1, view_size=(0, 0), focus_pos=None):
         x_end = x + w * scale
         y_end = y + h * scale
         offset = scale - 1 if style.inset else 0
-        if style.border_color is not None:
-            color = style.border_color
+        
+        # Determine material appearance
+        material_color, border_char, fill_char = get_material_info(style.material)
+        
+        # Use material color if no specific color is set
+        border_color = style.border_color if style.border_color is not None else material_color
+        fill_color = style.fill_color if style.fill_color is not None else material_color
+        
+        # Draw borders
+        if border_color is not None:
             for i in range(x + offset, x_end - offset):
-                set_pixel(i, y + offset, color)
-                set_pixel(i, y_end - 1 - offset, color)
+                set_pixel(i, y + offset, border_color, border_char)
+                set_pixel(i, y_end - 1 - offset, border_color, border_char)
             for i in range(y + offset, y_end - offset):
-                set_pixel(x + offset, i, color)
-                set_pixel(x_end - 1 - offset, i, color)
-        if style.fill_color is not None:
+                set_pixel(x + offset, i, border_color, border_char)
+                set_pixel(x_end - 1 - offset, i, border_color, border_char)
+        
+        # Fill interior
+        if fill_color is not None:
             for i in range(x + offset + 1, x_end - offset - 1):
                 for j in range(y + offset + 1, y_end - offset - 1):
-                    set_pixel(i, j, style.fill_color)
+                    set_pixel(i, j, fill_color, fill_char)
+        
+        # Add label
         if style.label:
             name = style.label[:w * scale]
             nx = x + (w * scale - len(name)) // 2
             ny = y + h * scale // 3
             for i, c in enumerate(name):
-                set_pixel(nx + i, ny, c)
+                set_pixel(nx + i, ny, 15, c)  # White text
          
+    # Render the canvas with Unicode block characters
     for i in range(0, len(canvas) - 1, 2):
-        for bg, fg in zip(canvas[i], canvas[i + 1]):
-            c = bg if isinstance(bg, str) else fg if isinstance(fg, str) else None
-            if c:
-                print(f'\x1b[m{c}', end='')
+        for (bg_color, bg_char), (fg_color, fg_char) in zip(canvas[i], canvas[i + 1]):
+            # If we have text characters, display them
+            if bg_char != ' ' and bg_char not in "▓▒░█≈🔥":
+                print(f'\x1b[38;5;15m\x1b[48;5;{bg_color}m{bg_char}', end='')
+            elif fg_char != ' ' and fg_char not in "▓▒░█≈🔥":
+                print(f'\x1b[38;5;15m\x1b[48;5;{fg_color}m{fg_char}', end='')
+            # Otherwise display block characters with the appropriate colors
             else:
-                print(f'\x1b[48;5;{bg}m\x1b[38;5;{fg}m\u2584', end='')
+                # Choose which character to display based on what's in each cell
+                if bg_char == ' ' and fg_char == ' ':
+                    # Both empty, use block character with colors
+                    print(f'\x1b[48;5;{bg_color}m\x1b[38;5;{fg_color}m\u2584', end='')
+                elif bg_char != ' ' and fg_char == ' ':
+                    # Only top has a character
+                    print(f'\x1b[38;5;{bg_color}m{bg_char}', end='')
+                elif bg_char == ' ' and fg_char != ' ':
+                    # Only bottom has a character
+                    print(f'\x1b[38;5;{fg_color}m{fg_char}', end='')
+                else:
+                    # Both have characters, prefer top
+                    print(f'\x1b[38;5;{bg_color}m{bg_char}', end='')
         print('\x1b[m\r')
 
 
@@ -332,12 +414,13 @@ def plot_relative_layout(
     ], inner_box, (width, height)
 
 
-@grammar('str ", " ("on" | "next_to") "=" str')
+@grammar('str ", " ("on" | "next_to") "=" str (", " "material" "=" str)?')
 @dataclass
 class Item:
     name: str
     on: str = ""
     next_to: str = ""
+    material: str = ""  # Material the item is made of
     
 
 @grammar(pos_args=1)
@@ -348,6 +431,7 @@ class Feature:
     width_along_wall: int
     depth: int
     in_front_of: str = ""
+    material: str = ""  # Material the feature is made of
 
 
 @grammar(pos_args=1)
@@ -355,6 +439,7 @@ class Feature:
 class WallFeature:
     name: str
     width: int
+    material: str = ""  # Material the wall feature is made of
 
     @property
     def dist_from_wall(self):
@@ -402,7 +487,7 @@ class Scene:
                    depth=f.depth,
                    offset=f.dist_from_wall,
                    in_front_of=f.in_front_of,
-                   style=Style(label=f.name, orig_dir=dirname)
+                   style=Style(label=f.name, orig_dir=dirname, material=getattr(f, 'material', ''))
                 ) if f.depth else Shape(
                    id=f.name,
                    width=f.width_along_wall,
@@ -411,6 +496,7 @@ class Scene:
                    style=Style(
                      label=f.name,
                      orig_dir=dirname,
+                     material=getattr(f, 'material', ''),
                      border_color=(9 if 'fire' in f.name.lower() else 0),
                    )
                 )
@@ -595,7 +681,7 @@ class Street:
                        width=f.width_along_street,
                        depth=f.depth,
                        offset=f.dist_from_street,
-                       style=Style(label=f.name, orig_dir=dirname)
+                       style=Style(label=f.name, orig_dir=dirname, material=getattr(f, 'material', ''))
                     )
                     for f in fs
                 ]) if isinstance(fs, list) else
@@ -605,7 +691,13 @@ class Street:
                          width=2,
                          depth=1,
                          offset=-1,
-                         style=Style(label=fs.name, border_color=0, inset=True, orig_dir=dirname)
+                         style=Style(
+                             label=fs.name, 
+                             border_color=0, 
+                             inset=True, 
+                             orig_dir=dirname,
+                             material=getattr(fs, 'material', '')
+                         )
                     )
                 ])
             )
@@ -640,7 +732,25 @@ def Intersection(*args, **kwargs):
 
 
 def get_person_box(pos, label):
-    return pos, (1, 1), Style(fill_color=4, border_color=None, label=label)
+    # Choose different colors based on person type
+    color = 4  # Default blue
+    
+    # Check for specific person types and assign appropriate colors
+    label_lower = label.lower()
+    if 'guard' in label_lower or 'soldier' in label_lower:
+        color = 1  # Red
+    elif 'merchant' in label_lower or 'vendor' in label_lower:
+        color = 3  # Yellow
+    elif 'wizard' in label_lower or 'mage' in label_lower:
+        color = 5  # Magenta
+    elif 'noble' in label_lower or 'king' in label_lower or 'queen' in label_lower:
+        color = 11  # Cyan
+    elif 'thief' in label_lower or 'rogue' in label_lower:
+        color = 0  # Black
+    elif 'monk' in label_lower or 'priest' in label_lower:
+        color = 15  # White
+    
+    return pos, (1, 1), Style(fill_color=color, border_color=None, label=label)
 
 
 def get_people_boxes(scene):
@@ -964,38 +1074,75 @@ def curses_prompt(stdscr, prompt):
 
 
 def draw_game(state: GameState):
-    print("\x1b[2J\x1b[1;1H", end="")
+    print("\x1b[2J\x1b[1;1H", end="")  # Clear screen
     if not state.scene or not state.inventory:
         return # REVIEW
     boxes, size = state.scene.plot()
     player_box = (
-        (state.posx, state.posy), (1, 1), Style(fill_color=8, label='you', border_color=None)
+        (state.posx, state.posy), (1, 1), Style(fill_color=14, label='you', border_color=None)  # Bright yellow player
     )
     term_w, term_h = os.get_terminal_size()
     draw(
         [*boxes, *state.people_boxes, player_box],
         size,
         scale=state.scale,
-        view_size=(term_w, 2 * (term_h - 10 - state.scrollback)),
+        view_size=(term_w, 2 * (term_h - 12 - state.scrollback)),  # Adjust for more UI elements
         focus_pos=(state.posx, state.posy)
     )
     screen_width = os.get_terminal_size()[0]
-    inv_message = ', '.join((f'{i.name} ({cnt})' for (i, cnt) in state.inventory.items))
+    
+    # Enhanced inventory display with item materials
+    inv_items = []
+    for i, cnt in state.inventory.items:
+        material_info = f" [{i.material}]" if i.material else ""
+        inv_items.append(f'{i.name}{material_info} ({cnt})')
+    inv_message = ', '.join(inv_items)
+    
+    # Enhanced UI with Unicode symbols and colors
     print('\r')
-    print('arrow keys: move | t: talk | 1-9: equip\r')
-    print('g: give | a: attack | enter: go into OR pick up items\r')
-    print('~: console - `newperson <name> <desc>`, `newdoor <name> <desc>`, `newgame <name>`\r')
-    print('\r')
-    print(('You have ' + inv_message)[:screen_width], end='\r\n')
-    print(state.hitbox.label if state.hitbox else '', '/', state.nearest_person, '\r')
-    print('-' * screen_width, end='\r\n')
+    print('\x1b[1m\x1b[38;5;39m╔' + '═' * (screen_width - 2) + '╗\x1b[0m\r')  # Top border
+    
+    # Commands bar with Unicode symbols
+    print('\x1b[1m\x1b[38;5;39m║\x1b[0m \x1b[38;5;15m↑←↓→\x1b[0m: move | \x1b[38;5;214mt\x1b[0m: talk | \x1b[38;5;214m1-9\x1b[0m: equip | \x1b[38;5;214mg\x1b[0m: give | \x1b[38;5;214ma\x1b[0m: attack | \x1b[38;5;214menter\x1b[0m: interact\x1b[1m\x1b[38;5;39m║\x1b[0m\r')
+    print('\x1b[1m\x1b[38;5;39m║\x1b[0m \x1b[38;5;214m~\x1b[0m: console - \x1b[38;5;245m`newperson <name> <desc>`, `newdoor <name> <desc>`, `newgame <name>`\x1b[0m\x1b[1m\x1b[38;5;39m' + ' ' * (screen_width - 79) + '║\x1b[0m\r')
+    
+    # Location and equipped item info
+    equipped = state.get_equipped()
+    equipped_text = f" | Equipped: \x1b[38;5;214m{equipped.name if equipped else 'None'}\x1b[0m"
+    location_line = f"\x1b[1m\x1b[38;5;39m║\x1b[0m Location: \x1b[38;5;47m{state.hitbox.label if state.hitbox else ''}\x1b[0m" + equipped_text
+    location_padding = ' ' * (screen_width - len(location_line.replace('\x1b[1m', '').replace('\x1b[0m', '').replace('\x1b[38;5;39m', '').replace('\x1b[38;5;47m', '').replace('\x1b[38;5;214m', '')) + 1)
+    print(location_line + location_padding + '\x1b[1m\x1b[38;5;39m║\x1b[0m\r')
+    
+    # Nearby person info
+    nearby_line = f"\x1b[1m\x1b[38;5;39m║\x1b[0m Nearby: \x1b[38;5;208m{state.nearest_person if state.nearest_person else 'No one'}\x1b[0m"
+    nearby_padding = ' ' * (screen_width - len(nearby_line.replace('\x1b[1m', '').replace('\x1b[0m', '').replace('\x1b[38;5;39m', '').replace('\x1b[38;5;208m', '')) + 1)
+    print(nearby_line + nearby_padding + '\x1b[1m\x1b[38;5;39m║\x1b[0m\r')
+    
+    # Inventory display
+    print('\x1b[1m\x1b[38;5;39m║\x1b[0m \x1b[38;5;226mInventory:\x1b[0m ' + inv_message[:screen_width-24] + '\x1b[1m\x1b[38;5;39m' + ' ' * (screen_width - len(inv_message) - 23) + '║\x1b[0m\r')
+    
+    # Divider
+    print('\x1b[1m\x1b[38;5;39m╠' + '═' * (screen_width - 2) + '╣\x1b[0m\r')
+    
+    # Message area with enhanced styling
     displayable_messages = [
         chunk
         for msg, wrap in state.messages
-        for chunk in (textwrap.wrap(msg, screen_width) if wrap else [msg])
+        for chunk in (textwrap.wrap(msg, screen_width-4) if wrap else [msg])
     ]
+    
+    # Print messages with a scrolling window effect
     for chunk in displayable_messages[-state.scrollback:]:
-        print(chunk[:screen_width], end='\r\n')
+        msg_line = f"\x1b[1m\x1b[38;5;39m║\x1b[0m \x1b[38;5;252m{chunk[:screen_width-4]}\x1b[0m"
+        msg_padding = ' ' * (screen_width - len(chunk) - 3)
+        print(msg_line + msg_padding + '\x1b[1m\x1b[38;5;39m║\x1b[0m\r')
+    
+    # Fill remaining message area with empty lines
+    for _ in range(state.scrollback - len(displayable_messages[-state.scrollback:])):
+        print('\x1b[1m\x1b[38;5;39m║\x1b[0m' + ' ' * (screen_width - 2) + '\x1b[1m\x1b[38;5;39m║\x1b[0m\r')
+    
+    # Bottom border
+    print('\x1b[1m\x1b[38;5;39m╚' + '═' * (screen_width - 2) + '╝\x1b[0m\r')
 
 
 def replay_typing(msg: str, chunk_size: int, delay: Union[float, Callable]):
