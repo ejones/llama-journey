@@ -301,163 +301,110 @@ def draw(boxes, size, scale=1, view_size=(0, 0), focus_pos=None):
         view_size: Size of the viewport (width, height)
         focus_pos: Position to center the view on (x, y)
     """
-    view_w, view_h = view_size
-    width, height = size
-    canvas_w = view_w or width * scale
-    canvas_h = view_h or height * scale
-
-    # Calculate viewport offset
-    offsetx = (view_w - width * scale) // 2
-    offsety = (view_h - height * scale) // 2
+    world_width, world_height = size
+    view_width, view_height = view_size if view_size != (0, 0) else size
+    
+    # Initialize the canvas with empty spaces
+    canvas = [[" " for _ in range(world_width * scale)] for _ in range(world_height * scale)]
+    
+    # Calculate view boundaries if a focus position is provided
     if focus_pos:
-        focusx, focusy = focus_pos
-        focusx *= scale
-        focusy *= scale
-        offsetx = max(canvas_w // 5 - focusx, min(offsetx, canvas_w * 4 // 5 - focusx))
-        offsety = max(canvas_h // 5 - focusy, min(offsety, canvas_h * 4 // 5 - focusy))
-
-    # Create canvas with tuples of (color, character)
-    canvas = [[(0, ' ') for _ in range(canvas_w)] for _ in range(canvas_h)]
-
-    # Function to set a pixel on the canvas with bounds checking
-    def set_pixel(x, y, color, char=' '):
-        x += offsetx
-        y += offsety
-        if 0 <= x < canvas_w and 0 <= y < canvas_h:
-            canvas[y][x] = (color, char)
-
-    # Unicode box drawing characters for corners and edges
-    box_chars = {
-        'tl': '╔', 'tr': '╗', 'bl': '╚', 'br': '╝',
-        'h': '═', 'v': '║', 'lt': '╠', 'rt': '╣',
-        'tb': '╦', 'bt': '╩', 'cross': '╬'
-    }
-
-    # Draw each box in the scene
-    for (x, y), (w, h), style in boxes:
-        x *= scale 
-        y *= scale
-        x_end = x + w * scale
-        y_end = y + h * scale
-        offset = scale - 1 if style.inset else 0
+        focus_x, focus_y = focus_pos
+        half_view_width = view_width // 2
+        half_view_height = view_height // 2
+        view_left = max(0, focus_x * scale - half_view_width)
+        view_top = max(0, focus_y * scale - half_view_height)
+        view_right = min(world_width * scale, view_left + view_width)
+        view_bottom = min(world_height * scale, view_top + view_height)
+    else:
+        view_left, view_top = 0, 0
+        view_right, view_bottom = world_width * scale, world_height * scale
+    
+    # Sort boxes by depth for proper layering (front to back)
+    sorted_boxes = boxes #sorted(boxes, key=lambda box: box[0][1], reverse=True)
+    
+    # Draw each box on the canvas
+    for (x, y), (width, height), style in sorted_boxes:
+        # Scale coordinates and dimensions
+        sx, sy = x * scale, y * scale
+        swidth, sheight = width * scale, height * scale
         
-        # Get material-based appearance
-        material_color, border_char, fill_char = get_material_info(style.material)
-        
-        # Use material color if no specific color is set
-        border_color = style.border_color if style.border_color is not None else material_color
-        fill_color = style.fill_color if style.fill_color is not None else material_color
-        
-        # Draw corners with special characters for a more detailed look
-        if border_color is not None:
-            # Top-left
-            set_pixel(x + offset, y + offset, border_color, '┌')
-            # Top-right
-            set_pixel(x_end - 1 - offset, y + offset, border_color, '┐')
-            # Bottom-left
-            set_pixel(x + offset, y_end - 1 - offset, border_color, '└')
-            # Bottom-right
-            set_pixel(x_end - 1 - offset, y_end - 1 - offset, border_color, '┘')
+        if not (sx + swidth <= view_left or sx >= view_right or 
+                sy + sheight <= view_top or sy >= view_bottom):
             
-            # Draw horizontal borders (top and bottom)
-            for i in range(x + offset + 1, x_end - offset - 1):
-                set_pixel(i, y + offset, border_color, '─')
-                set_pixel(i, y_end - 1 - offset, border_color, '─')
+            # Get material styling information
+            if style.material:
+                color, border_char, fill_char = get_material_info(style.material)
+            else:
+                # Default styling if no material specified
+                color = style.border_color if style.border_color is not None else 7
+                border_char = "█"
+                fill_char = " " if style.fill_color is None else "░"
             
-            # Draw vertical borders (left and right)
-            for i in range(y + offset + 1, y_end - offset - 1):
-                set_pixel(x + offset, i, border_color, '│')
-                set_pixel(x_end - 1 - offset, i, border_color, '│')
-        
-        # Fill interior with material-specific characters or pattern
-        if fill_color is not None:
-            for i in range(x + offset + 1, x_end - offset - 1):
-                for j in range(y + offset + 1, y_end - offset - 1):
-                    # Use special patterns for different materials instead of just solid fills
-                    if style.material.lower().startswith('wood'):
-                        # Wood grain pattern (alternate lines)
-                        char = '░' if j % 2 == 0 else '▒'
-                    elif 'stone' in style.material.lower():
-                        # Stone texture (random dots)
-                        char = '▒' if (i + j) % 3 == 0 else '░'
-                    elif 'metal' in style.material.lower():
-                        # Metal texture (solid with highlights)
-                        char = '▓' if (i + j) % 5 == 0 else '▒'
-                    elif 'glass' in style.material.lower():
-                        # Glass texture (mostly empty with some dots)
-                        char = '·' if (i * j) % 7 == 0 else ' '
-                    elif 'water' in style.material.lower():
-                        # Water texture (wavy pattern)
-                        char = '~' if j % 2 == 0 else '≈'
-                    else:
-                        # Default fill
-                        char = fill_char
-                    
-                    set_pixel(i, j, fill_color, char)
-        
-        # Add label with enhanced text appearance
-        if style.label:
-            # Limit label length based on box width
-            name = style.label[:w * scale - 2]
-            if not name:
+            # Special handling for person characters (single character entities)
+            if len(style.material) == 1 and style.fill_color is not None and style.border_color is None:
+                # Person or special entity representation
+                for i in range(min(1, swidth)):
+                    for j in range(min(1, sheight)):
+                        if 0 <= sx + i < len(canvas[0]) and 0 <= sy + j < len(canvas):
+                            # Draw the character with its color
+                            row = sy + j
+                            col = sx + i
+                            if view_left <= col < view_right and view_top <= row < view_bottom:
+                                canvas[row][col] = f"\x1b[38;5;{style.fill_color}m{style.material}\x1b[0m"
                 continue
                 
-            # Center the label
-            nx = x + (w * scale - len(name)) // 2
-            ny = y + h * scale // 3
+            # Draw border and fill
+            for i in range(swidth):
+                for j in range(sheight):
+                    if 0 <= sx + i < len(canvas[0]) and 0 <= sy + j < len(canvas):
+                        row = sy + j
+                        col = sx + i
+                        
+                        if view_left <= col < view_right and view_top <= row < view_bottom:
+                            # Determine if this is a border or fill position
+                            is_border = (i == 0 or i == swidth - 1 or j == 0 or j == sheight - 1)
+                            
+                            if is_border and style.border_color is not None:
+                                # Border with color
+                                canvas[row][col] = f"\x1b[38;5;{color}m{border_char}\x1b[0m"
+                            elif not is_border and style.fill_color is not None:
+                                # Fill with color
+                                fill_color = style.fill_color
+                                canvas[row][col] = f"\x1b[38;5;{fill_color}m{fill_char}\x1b[0m"
+                            elif style.inset:
+                                # Inset style for UI elements
+                                if (i == 0 and j == 0) or (i == swidth - 1 and j == sheight - 1):
+                                    canvas[row][col] = f"\x1b[38;5;{color}m╋\x1b[0m"
+                                elif i == 0:
+                                    canvas[row][col] = f"\x1b[38;5;{color}m┃\x1b[0m"
+                                elif i == swidth - 1:
+                                    canvas[row][col] = f"\x1b[38;5;{color}m┃\x1b[0m"
+                                elif j == 0:
+                                    canvas[row][col] = f"\x1b[38;5;{color}m━\x1b[0m"
+                                elif j == sheight - 1:
+                                    canvas[row][col] = f"\x1b[38;5;{color}m━\x1b[0m"
+                                else:
+                                    canvas[row][col] = " "
             
-            # Draw a clearer text background if it's a feature (not text)
-            if w > len(name) + 2 and h > 2:
-                # Draw a cleaner background for text
-                for i in range(nx - 1, nx + len(name) + 1):
-                    if 0 <= i - x < w * scale:
-                        set_pixel(i, ny, 0, ' ')  # Black background for text
-            
-            # Draw the text with a bright color for visibility
-            for i, c in enumerate(name):
-                if c != ' ':  # Only print non-space characters
-                    set_pixel(nx + i, ny, 15, c)  # White text
+            # Add label if provided
+            if style.label and len(style.label) > 0 and swidth > 2:
+                label = style.label[:swidth-2]  # Truncate if too long
+                start_x = sx + (swidth - len(label)) // 2
+                if 0 <= sy < len(canvas) and all(0 <= start_x + k < len(canvas[0]) for k in range(len(label))):
+                    for k, char in enumerate(label):
+                        col = start_x + k
+                        if view_left <= col < view_right and view_top <= sy < view_bottom:
+                            canvas[sy][col] = f"\x1b[1m{char}\x1b[0m"  # Bold for labels
     
-    # Render the canvas with enhanced block characters
-    for i in range(0, len(canvas) - 1, 2):
-        for (bg_color, bg_char), (fg_color, fg_char) in zip(canvas[i], canvas[i + 1]):
-            # Special characters that should be displayed directly
-            special_chars = "┌┐└┘─│╔╗╚╝═║╠╣╦╩╬·≈~"
-            
-            # Text or special characters rendering
-            if bg_char != ' ' and (bg_char.isalnum() or bg_char in special_chars):
-                # Text in top cell
-                if bg_char in special_chars:
-                    # Box drawing characters
-                    print(f'\x1b[38;5;{bg_color}m{bg_char}', end='')
-                else:
-                    # Regular text
-                    print(f'\x1b[38;5;15m\x1b[48;5;{bg_color}m{bg_char}', end='')
-            elif fg_char != ' ' and (fg_char.isalnum() or fg_char in special_chars):
-                # Text in bottom cell
-                if fg_char in special_chars:
-                    # Box drawing characters
-                    print(f'\x1b[38;5;{fg_color}m{fg_char}', end='')
-                else:
-                    # Regular text
-                    print(f'\x1b[38;5;15m\x1b[48;5;{fg_color}m{fg_char}', end='')
-            else:
-                # Block characters for background/foreground colors
-                if bg_char == ' ' and fg_char == ' ':
-                    # Empty cells - use block character with appropriate colors
-                    print(f'\x1b[48;5;{bg_color}m\x1b[38;5;{fg_color}m\u2584', end='')
-                elif bg_char != ' ' and fg_char == ' ':
-                    # Top cell has a texture character
-                    print(f'\x1b[38;5;{bg_color}m{bg_char}', end='')
-                elif bg_char == ' ' and fg_char != ' ':
-                    # Bottom cell has a texture character
-                    print(f'\x1b[38;5;{fg_color}m{fg_char}', end='')
-                else:
-                    # Both have texture characters, show top with bottom color as background
-                    print(f'\x1b[48;5;{fg_color}m\x1b[38;5;{bg_color}m{bg_char}', end='')
-        
-        # Reset colors at end of line
-        print('\x1b[m\r')
+    # Render the visible portion of the canvas
+    for y in range(view_top, view_bottom):
+        row = canvas[y][view_left:view_right]
+        print("".join(row), end='\r\n')
+    
+    # Print position information (useful for debugging)
+    #if focus_pos:
+    #    print(f"\x1b[38;5;8m[View: {view_left},{view_top} to {view_right},{view_bottom}]\x1b[0m")
 
 
 def plot_relative_layout(
@@ -1201,14 +1148,12 @@ def draw_game(state: GameState):
     boxes, size = state.scene.plot()
     player_box = (
         (state.posx, state.posy), (1, 1), 
-        Style(fill_color=14, label='you', border_color=None)  # Bright yellow player
+        Style(fill_color=14, label='you', border_color=None, material='⚗')  # Bright yellow player
     )
     
     # Calculate available space for the map
     # Reserve space for UI elements (header, footer, inventory, etc.)
-    map_height = term_h - 12 - state.scrollback
-    if map_height < 10:  # Minimum reasonable map height
-        map_height = 10
+    map_height = term_h - 16 - state.scrollback
     
     # Render map
     draw(
@@ -1238,7 +1183,7 @@ def draw_game(state: GameState):
     # Function to create a padded line with border
     def border_line(content, border_color="39"):
         stripped_content = strip_ansi(content)
-        padding = ' ' * (screen_width - len(stripped_content) - 2)
+        padding = ' ' * (screen_width - len(stripped_content) - 3)
         return f"\x1b[1m\x1b[38;5;{border_color}m║\x1b[0m {content}{padding}\x1b[1m\x1b[38;5;{border_color}m║\x1b[0m\r"
     
     # Draw UI frame and elements
@@ -1372,7 +1317,7 @@ def restore_prompt(command_log: List[Tuple[str, object]]):
 
 def curses_main(stdscr, inference_proc):
     stdscr.refresh()
-    state = GameState(scale=6, scrollback=6)
+    state = GameState(scale=2, scrollback=4)
 
     scene = inference_proc.get_last_object()
     state.handle(scene)
